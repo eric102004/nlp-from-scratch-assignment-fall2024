@@ -21,14 +21,14 @@ def read_base_url_file(base_url_file):
     return base_urls
 
 class WebCrawler:
-    def __init__(self, base_url, url_id, return_dict=True, check_mode=False):
+    def __init__(self, base_url, url_id, return_dict=False, check_mode=False):
         self.base_url = base_url
         self.visited_urls = set()
         self.tovisit_urls = [base_url]
         self.url_id = url_id
         self.return_dict = return_dict
         self.check_mode = check_mode
-        self.title_counter = dict()
+        self.title_dict = dict()
         os.makedirs(f'data/raw_texts/{url_id}', exist_ok=True)
 
     def visit_website(self, max_visit=20):
@@ -39,21 +39,15 @@ class WebCrawler:
             # check if the url is visited
             if url not in self.visited_urls:
                 # get text from url
-                entity = self.get_text_from_url(url, return_dict=self.return_dict)
+                entity = self.get_text_from_url(url)
                 time.sleep(1)
-                if self.return_dict:
-                    if entity['text'] and entity['title']:
-                        fname = entity['title']
-                        output_entity = entity
-                else:
-                    text, title, url = entity
-                    if text and title:
-                        fname = title
-                        output_entity = text
+                if entity['text'] and entity['title']:
+                    fname = entity['title']
+                    output_entity = entity
                 
-                # write to file
-                output_file = f'data/raw_texts/{self.url_id}/{fname}.txt'
-                self.write_text(output_file, output_entity)
+                    # write to file
+                    output_file = f'data/raw_texts/{self.url_id}/{fname}.txt'
+                    self.write_text(output_file, output_entity, return_dict=self.return_dict)
                 
                 self.visited_urls.add(url)
                 
@@ -69,12 +63,14 @@ class WebCrawler:
     def filter_urls(self, urls):
         return [url for url in urls if is_valid_url(url)]
 
-    def get_text_from_url(self, url, return_dict=True):
+    def get_text_from_url(self, url):
         #try:
         if True:
             res = requests.get(url) 
 
             soup = BeautifulSoup(res.text,'html.parser') 
+
+            # getting title
             try:
                 title = soup.title.text
                 title = title.replace('/', '-')
@@ -86,6 +82,9 @@ class WebCrawler:
             for raw_url in soup.find_all('a', href=True):
                 #import pdb;pdb.set_trace()
                 new_url = urljoin(self.base_url, raw_url['href'])
+                # remove index.html at the end
+                if new_url.endswith('/index.html'):
+                    new_url = new_url[:-len('/index.html')]
                 if new_url.startswith(self.base_url) and new_url not in self.visited_urls:
                     self.tovisit_urls.append(new_url)
 
@@ -99,6 +98,11 @@ class WebCrawler:
             text = '\n'.join(chunk for chunk in chunks if chunk)
             text = re.sub(r'\s+', ' ', text)
             '''
+            # fix duplicate title
+            self.title_dict[title] = self.title_dict.get(title, 0) + 1
+            if self.title_dict[title]>1:
+                title = title + str(self.title_dict[title])
+
         #except:    
         else:
             text, title = None, None
@@ -106,21 +110,20 @@ class WebCrawler:
         #    import pdb;pdb.set_trace()
         #    print(url)
         #    print(text)
-        if return_dict:
-            return {'url': url, 
-                    'title': title,
-                    'text': text, 
-                    }
-        else:
-            return text, title, url
+        return {'url': url, 
+                'title': title,
+                'text': text, 
+                }
 
-    def write_text(self, output_file, text):
-        if type(text)==dict:
+
+    def write_text(self, output_file, text, return_dict=False):
+        if return_dict:
             with open(output_file, 'w') as f:
                 json.dump(text, f, indent=4) 
-        elif type(text)==str:
+        else:
             with open(output_file, 'w') as f:
-                f.write(text)
+                for k, v in text.items():
+                    f.write(k+'\t'+v+'\n')
 
  
     def read_url_file(self, url_file):
